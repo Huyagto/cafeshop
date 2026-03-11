@@ -1,0 +1,323 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+////////////////////
+/// USER & AUTH  ///
+////////////////////
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password      String
+  name          String
+  phone         String?
+  loyaltyPoints Int      @default(0)
+  role          UserRole @default(CUSTOMER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders            Order[]
+  vouchers          UserVoucher[]
+  pushSubscriptions PushSubscription[]
+  cart              Cart?
+
+  @@index([email])
+}
+
+////////////////////
+/// CATEGORY     ///
+////////////////////
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  image     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@index([name])
+  @@index([active])
+}
+
+////////////////////
+/// PRODUCT      ///
+////////////////////
+
+model Product {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String? @db.Text
+  price       Decimal @db.Decimal(10, 2)
+  type        ProductType @default(SINGLE)
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  image     String?
+  available Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems     OrderItem[]
+  cartItems      CartItem[]
+  ProductTopping ProductTopping[]
+
+  comboItems     ComboItem[] @relation("Combo")        // sản phẩm là combo
+  usedInCombos   ComboItem[] @relation("ComboProduct") // sản phẩm nằm trong combo
+
+  @@index([categoryId])
+}
+
+////////////////////
+/// ORDER        ///
+////////////////////
+
+model Order {
+  id           String      @id @default(uuid())
+  orderNumber  String      @unique
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  status       OrderStatus @default(PENDING)
+  total        Decimal     @db.Decimal(10, 2)
+  pointsEarned Int         @default(0)
+  isKiosk      Boolean     @default(false)
+  notes        String?     @db.Text
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  items OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String             @id @default(uuid())
+  orderId   String
+  order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product            @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Decimal            @db.Decimal(10, 2)
+  toppings  OrderItemTopping[]
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model ComboItem {
+  id        String @id @default(uuid())
+
+  comboId   String
+  productId String
+  quantity  Int    @default(1)
+
+  combo   Product @relation("Combo", fields: [comboId], references: [id], onDelete: Cascade)
+  product Product @relation("ComboProduct", fields: [productId], references: [id])
+
+  @@unique([comboId, productId])
+}
+
+
+////////////////////
+/// VOUCHER      ///
+////////////////////
+
+model Voucher {
+  id          String      @id @default(uuid())
+  code        String      @unique
+  name        String
+  description String?     @db.Text
+  discount    Decimal     @db.Decimal(10, 2)
+  type        VoucherType
+  minPoints   Int         @default(0)
+  validFrom   DateTime    @default(now())
+  validUntil  DateTime
+  maxUses     Int         @default(1)
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+
+  userVouchers UserVoucher[]
+
+  @@index([code])
+  @@index([active])
+}
+
+model UserVoucher {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  voucherId String
+  voucher   Voucher   @relation(fields: [voucherId], references: [id])
+  used      Boolean   @default(false)
+  usedAt    DateTime?
+  claimedAt DateTime  @default(now())
+
+  @@unique([userId, voucherId])
+  @@index([userId])
+  @@index([used])
+}
+
+////////////////////
+/// PUSH         ///
+////////////////////
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  endpoint  String   @unique @db.VarChar(500)
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+////////////////////
+/// CART         ///
+////////////////////
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([userId])
+  @@index([userId])
+}
+
+model CartItem {
+  id        String            @id @default(uuid())
+  cartId    String
+  cart      Cart              @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product           @relation(fields: [productId], references: [id])
+  quantity  Int               @default(1)
+  price     Decimal           @db.Decimal(10, 2)
+  toppings  CartItemTopping[]
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+  @@index([productId])
+}
+
+////////////////////
+/// ENUMS        ///
+////////////////////
+
+enum UserRole {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum VoucherType {
+  PERCENTAGE
+  FIXED
+  FREE_ITEM
+}
+
+enum ProductType {
+  SINGLE
+  COMBO
+}
+
+
+////////////////////
+/// TOPPING      ///
+////////////////////
+
+model Topping {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String? @db.Text
+  price       Decimal @db.Decimal(10, 2)
+
+  image      String?
+  available  Boolean  @default(true)
+  categoryId String? // Optional: để nhóm topping theo category
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Quan hệ nhiều-nhiều với Product
+  products         ProductTopping[]
+  CartItemTopping  CartItemTopping[]
+  OrderItemTopping OrderItemTopping[]
+
+  @@index([name])
+  @@index([available])
+}
+
+// Quan hệ nhiều-nhiều giữa Product và Topping
+model ProductTopping {
+  id        String  @id @default(uuid())
+  productId String
+  toppingId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  topping   Topping @relation(fields: [toppingId], references: [id], onDelete: Cascade)
+
+  // Có thể thêm các field như: isRequired (topping bắt buộc), maxQuantity, v.v.
+  isRequired  Boolean @default(false)
+  maxQuantity Int     @default(1) // Số lượng tối đa có thể chọn
+
+  @@unique([productId, toppingId])
+  @@index([productId])
+  @@index([toppingId])
+}
+
+// Topping đã chọn trong CartItem
+model CartItemTopping {
+  id         String  @id @default(uuid())
+  cartItemId String
+  toppingId  String
+  quantity   Int     @default(1)
+  price      Decimal @db.Decimal(10, 2) // Giá tại thời điểm chọn
+
+  cartItem CartItem @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
+  topping  Topping  @relation(fields: [toppingId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([cartItemId, toppingId])
+  @@index([cartItemId])
+  @@index([toppingId])
+}
+
+// Topping đã chọn trong OrderItem
+model OrderItemTopping {
+  id          String  @id @default(uuid())
+  orderItemId String
+  toppingId   String
+  quantity    Int     @default(1)
+  price       Decimal @db.Decimal(10, 2) // Giá tại thời điểm đặt hàng
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  topping   Topping   @relation(fields: [toppingId], references: [id])
+
+  @@unique([orderItemId, toppingId])
+  @@index([orderItemId])
+  @@index([toppingId])
+}
